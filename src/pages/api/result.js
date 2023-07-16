@@ -1,97 +1,83 @@
-const CDP = require("chrome-remote-interface");
-const { NextApiRequest, NextApiResponse } = require("next");
+const puppeteer = require("puppeteer");
 
 export default async function handler(req, res) {
   try {
-    const client = await CDP();
+    // Launch a headless browser in the new Headless mode
+    const browser = await puppeteer.launch({ headless: "new" });
 
-    const { DOM, Page } = client;
+    // Open a new page
+    const page = await browser.newPage();
 
-    await Promise.all([DOM.enable(), Page.enable()]);
+    // Navigate to the website
+    await page.goto("https://www.shoppersstop.com/store-finder");
 
-    await Page.navigate({ url: "https://www.shoppersstop.com/store-finder" });
+    console.log("started...");
 
-    await Page.loadEventFired();
+    // Wait for the necessary elements to load with a longer timeout (e.g., 120 seconds)
+    await page.waitForSelector("#city-name", { timeout: 120000 });
 
-    const cityOptions = await DOM.querySelectorAll({
-      nodeId: DOM.getDocument().root.nodeId,
-      selector: "#city-name option",
-    });
+    // Get the city options
+    const cityOptions = await page.$$eval("#city-name option", (options) =>
+      options.map((option) => option.value)
+    );
 
+    // Store the city and store information
     const cityStoreInfo = [];
 
-    for (const cityOption of cityOptions.nodeIds) {
-      const cityValue = await DOM.getAttribute({
-        nodeId: cityOption,
-        name: "value",
-      });
+    // Iterate through each city option
+    for (const cityOption of cityOptions) {
+      // Select a city
+      await page.select("#city-name", cityOption);
 
-      await DOM.setAttributeValue({
-        nodeId: cityOption,
-        name: "selected",
-        value: "true",
-      });
+      // Wait for the store names to load
+      await page.waitForSelector("#selectedPOS option", { timeout: 120000 });
 
-      await client.send("Input.selectOption", {
-        options: [{ value: cityValue }],
-      });
+      // Get the store options
+      const storeOptions = await page.$$eval("#selectedPOS option", (options) =>
+        options.map((option) => option.value)
+      );
 
-      await Page.waitForSelector("#selectedPOS option");
-
-      const storeOptions = await DOM.querySelectorAll({
-        nodeId: DOM.getDocument().root.nodeId,
-        selector: "#selectedPOS option",
-      });
-
+      // Store the store names and addresses under the current city
       const stores = [];
+      for (let storeOption of storeOptions) {
+        storeOption = storeOption.split(",");
+        // Select a store
+        await page.select("#selectedPOS", storeOption.at(-1));
 
-      for (const storeOption of storeOptions.nodeIds) {
-        const storeValue = await DOM.getAttribute({
-          nodeId: storeOption,
-          name: "value",
-        });
+        // Wait for the store address to load
+        await page.waitForSelector(".store_address", { timeout: 120000 });
 
-        await DOM.setAttributeValue({
-          nodeId: storeOption,
-          name: "selected",
-          value: "true",
-        });
+        // Get the store name and address
+        const storeName = await page.$eval(
+          ".store_address h3",
+          (element) => element.textContent
+        );
+        const storeAddress = await page.$eval(
+          ".store_address p",
+          (element) => element.textContent
+        );
 
-        await client.send("Input.selectOption", {
-          options: [{ value: storeValue }],
-        });
-
-        await Page.waitForSelector(".store_address");
-
-        const storeName = await DOM.querySelector({
-          nodeId: DOM.getDocument().root.nodeId,
-          selector: ".store_address h3",
-        });
-
-        const storeAddress = await DOM.querySelector({
-          nodeId: DOM.getDocument().root.nodeId,
-          selector: ".store_address p",
-        });
-
-        const name = await DOM.getOuterHTML({ nodeId: storeName.nodeId });
-        const address = await DOM.getOuterHTML({ nodeId: storeAddress.nodeId });
-
-        stores.push({
-          name: name.substring(1, name.length - 1),
-          latitude: storeValue.split(",")?.[0] || "",
-          longitude: storeValue.split(",")?.[1] || "",
-          address: address.substring(1, address.length - 1),
-        });
+        // Store the store name and address in the array
+        storeOption?.[0]?.length > 0 &&
+          stores.push({
+            name: storeName,
+            latitude: storeOption?.[0],
+            longitude: storeOption?.[1],
+            address: storeAddress,
+          });
       }
 
+      // Store the city and stores in the array
       cityStoreInfo.push({
-        city: cityValue,
-        stores,
+        city: cityOption,
+        stores: stores,
       });
     }
 
-    await client.close();
+    // Close the browser
+    await browser.close();
 
+    // Return the city and store information as the response
     res.status(200).json({ cityStoreInfo });
   } catch (error) {
     console.error("An error occurred:", error);
