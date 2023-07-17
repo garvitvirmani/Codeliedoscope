@@ -6,6 +6,8 @@
 My resume :
 https://drive.google.com/file/d/1XtMnvE0W6_j4g775Kip6mFs-OX6tzhn3/view?usp=drivesdk
 
+For Main scraping code using Puppeteer ==>> [click here](https://github.com/garvitvirmani/Codeliedoscope/blob/master/src/pages/api/result.js)
+
 ![](https://github.com/garvitvirmani/Codeliedoscope/blob/master/public/Screenshot%20(42).png)
 
 ******
